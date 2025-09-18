@@ -101,7 +101,7 @@ The following arguments are supported:
 
 * `url` - (Required) The URL which is used to manage the resource. This should be set to `servicePrincipals/{servicePrincipal-id}/appRoleAssignments`.
 
-* `body` - (Required) Specifies the configuration of the resource. More information about the arguments in `body` can be found in the [Microsoft documentation](https://learn.microsoft.com/en-us/azure/templates/servicePrincipals/appRoleAssignments?pivots=deployment-language-terraform).
+* `body` - (Required) Specifies the configuration of the resource. More information about the arguments in `body` can be found in the [Microsoft documentation](https://learn.microsoft.com/en-us/graph/templates/terraform/reference/v1.0/servicePrincipals/appRoleAssignments).
 
 * `api_version` - (Optional) The API version used to manage the resource. The default value is `v1.0`. The allowed values are `v1.0` and `beta`.
 

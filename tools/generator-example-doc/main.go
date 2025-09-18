@@ -91,7 +91,7 @@ func generateDocumentation(inputDir string) (string, error) {
 	out := template
 	out = strings.ReplaceAll(out, "{{.resource_type}}", resourceType)
 	out = strings.ReplaceAll(out, "{{.resource_type_friendly_name}}", resourceTypeFriendlyName)
-	out = strings.ReplaceAll(out, "{{.reference_link}}", fmt.Sprintf("https://learn.microsoft.com/en-us/azure/templates/%s?pivots=deployment-language-terraform", resourceType))
+	out = strings.ReplaceAll(out, "{{.reference_link}}", fmt.Sprintf("https://learn.microsoft.com/en-us/graph/templates/terraform/reference/v1.0/%s", resourceType))
 	out = strings.ReplaceAll(out, "{{.resource_id}}", GetImportResourceId(resourceType))
 	out = strings.ReplaceAll(out, "{{.url}}", GetUrlValue(resourceType))
 
