@@ -29,12 +29,15 @@ import (
 	"github.com/microsoft/terraform-provider-msgraph/internal/utils"
 )
 
+const FlagMoveState = "move_state"
+
 // Ensure provider defined types fully satisfy framework interfaces.
 var (
 	_ resource.Resource                     = &MSGraphResource{}
 	_ resource.ResourceWithImportState      = &MSGraphResource{}
 	_ resource.ResourceWithConfigValidators = &MSGraphResource{}
 	_ resource.ResourceWithModifyPlan       = &MSGraphResource{}
+	_ resource.ResourceWithMoveState        = &MSGraphResource{}
 )
 
 func NewMSGraphResource() resource.Resource {
@@ -357,6 +360,24 @@ func (r *MSGraphResource) Read(ctx context.Context, req resource.ReadRequest, re
 
 	state := model
 	if strings.HasSuffix(model.Url.ValueString(), "/$ref") {
+		if v, _ := req.Private.GetKey(ctx, FlagMoveState); v != nil && string(v) == "true" {
+			body := map[string]string{
+				"@odata.id": fmt.Sprintf("https://graph.microsoft.com/v1.0/directoryObjects/%s", model.Id.ValueString()),
+			}
+			data, err := json.Marshal(body)
+			if err != nil {
+				resp.Diagnostics.AddError("Invalid body", err.Error())
+				return
+			}
+			payload, err := dynamic.FromJSONImplied(data)
+			if err != nil {
+				resp.Diagnostics.AddError("Invalid payload", err.Error())
+				return
+			}
+			state.Body = payload
+			resp.Diagnostics.Append(resp.Private.SetKey(ctx, FlagMoveState, []byte("false"))...)
+		}
+
 		state.Output = types.DynamicNull()
 		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 		return
@@ -374,7 +395,21 @@ func (r *MSGraphResource) Read(ctx context.Context, req resource.ReadRequest, re
 		return
 	}
 	state.Output = types.DynamicValue(buildOutputFromBody(responseBody, model.ResponseExportValues))
-	if !model.Body.IsNull() {
+
+	if v, _ := req.Private.GetKey(ctx, FlagMoveState); v != nil && string(v) == "true" {
+		data, err := json.Marshal(responseBody)
+		if err != nil {
+			resp.Diagnostics.AddError("Invalid body", err.Error())
+			return
+		}
+		payload, err := dynamic.FromJSONImplied(data)
+		if err != nil {
+			resp.Diagnostics.AddError("Invalid payload", err.Error())
+			return
+		}
+		state.Body = payload
+		resp.Diagnostics.Append(resp.Private.SetKey(ctx, FlagMoveState, []byte("false"))...)
+	} else if !model.Body.IsNull() {
 		requestBody := make(map[string]interface{})
 		if err := unmarshalBody(model.Body, &requestBody); err != nil {
 			resp.Diagnostics.AddError("Invalid body", fmt.Sprintf(`The argument "body" is invalid: %s`, err.Error()))
@@ -529,4 +564,102 @@ func buildOutputFromBody(body interface{}, paths map[string]string) attr.Value {
 		return nil
 	}
 	return out
+}
+
+func (r *MSGraphResource) MoveState(ctx context.Context) []resource.StateMover {
+	return []resource.StateMover{
+		{
+			SourceSchema: &schema.Schema{
+				Attributes: map[string]schema.Attribute{
+					"id": schema.StringAttribute{
+						Computed: true,
+					},
+				},
+			},
+			StateMover: func(ctx context.Context, request resource.MoveStateRequest, response *resource.MoveStateResponse) {
+				if !strings.HasPrefix(request.SourceTypeName, "azuread") {
+					response.Diagnostics.AddError("Invalid source type", "The `msgraph_resource` resource can only be moved from an `azuread` resource")
+					return
+				}
+
+				if request.SourceState == nil {
+					response.Diagnostics.AddError("Invalid source state", "The source state is nil")
+					return
+				}
+
+				requestID := ""
+				if response.Diagnostics.Append(request.SourceState.GetAttribute(ctx, path.Root("id"), &requestID)...); response.Diagnostics.HasError() {
+					return
+				}
+				if requestID == "" {
+					response.Diagnostics.AddError("Invalid source state", "The source state does not contain an id")
+					return
+				}
+
+				var urlValue, idValue string
+				switch request.SourceTypeName {
+				case "azuread_group_member":
+					// requestID: 000000/member/000000
+					ids := strings.Split(requestID, "/member/")
+					if len(ids) != 2 {
+						response.Diagnostics.AddError("Invalid source ID", fmt.Sprintf("The source ID %q is not in the expected format for an azuread_group_member resource", requestID))
+						return
+					}
+					urlValue = fmt.Sprintf("/groups/%s/members/$ref", ids[0])
+					idValue = ids[1]
+				case "azuread_administrative_unit_member",
+					"azuread_application_owner",
+					"azuread_directory_role_member",
+					"azuread_service_principal_claims_mapping_policy_assignment":
+					parts := strings.Split(requestID, "/")
+					if len(parts) < 2 {
+						response.Diagnostics.AddError("Invalid source ID", fmt.Sprintf("The source ID %q is not in the expected format for an %s resource", requestID, request.SourceTypeName))
+						return
+					}
+
+					idValue = parts[len(parts)-1]
+					urlValue = fmt.Sprintf("%s/$ref", strings.Join(parts[:len(parts)-1], "/"))
+				default:
+					lastIndex := strings.LastIndex(requestID, "/")
+					if lastIndex == -1 {
+						response.Diagnostics.AddError("Invalid source ID", fmt.Sprintf("The source ID %q does not contain a path separator '/'", requestID))
+						return
+					}
+					urlValue = requestID[:lastIndex]
+					if !strings.HasPrefix(urlValue, "/") {
+						urlValue = "/" + urlValue
+					}
+					idValue = requestID[lastIndex+1:]
+				}
+
+				// For $ref URLs, resource_url should be the collection URL without $ref + the ID
+				baseUrl := strings.TrimSuffix(urlValue, "/$ref")
+				resourceUrl := fmt.Sprintf("%s/%s", baseUrl, idValue)
+
+				state := MSGraphResourceModel{
+					Id:                    types.StringValue(idValue),
+					Url:                   types.StringValue(urlValue),
+					ApiVersion:            types.StringValue("v1.0"),
+					ResourceUrl:           types.StringValue(resourceUrl),
+					IgnoreMissingProperty: types.BoolValue(true),
+					CreateQueryParameters: types.MapNull(types.ListType{ElemType: types.StringType}),
+					UpdateQueryParameters: types.MapNull(types.ListType{ElemType: types.StringType}),
+					ReadQueryParameters:   types.MapNull(types.ListType{ElemType: types.StringType}),
+					DeleteQueryParameters: types.MapNull(types.ListType{ElemType: types.StringType}),
+					Retry:                 retry.NewValueNull(),
+					Timeouts: timeouts.Value{
+						Object: types.ObjectNull(map[string]attr.Type{
+							"create": types.StringType,
+							"read":   types.StringType,
+							"update": types.StringType,
+							"delete": types.StringType,
+						}),
+					},
+				}
+
+				response.Diagnostics.Append(response.TargetPrivate.SetKey(ctx, FlagMoveState, []byte("true"))...)
+				response.Diagnostics.Append(response.TargetState.Set(ctx, &state)...)
+			},
+		},
+	}
 }
