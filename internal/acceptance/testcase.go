@@ -113,7 +113,7 @@ func (td TestData) DataSourceTest(t *testing.T, steps []resource.TestStep) {
 		PreCheck: func() { PreCheck(t) },
 		Steps:    steps,
 	}
-	td.runAcceptanceTest(t, testCase)
+	td.RunAcceptanceTest(t, testCase)
 }
 
 func (td TestData) ResourceTest(t *testing.T, testResource TestResource, steps []resource.TestStep) {
@@ -128,10 +128,10 @@ func (td TestData) ResourceTest(t *testing.T, testResource TestResource, steps [
 		},
 		Steps: steps,
 	}
-	td.runAcceptanceTest(t, testCase)
+	td.RunAcceptanceTest(t, testCase)
 }
 
-func (td TestData) runAcceptanceTest(t *testing.T, testCase resource.TestCase) {
+func (td TestData) RunAcceptanceTest(t *testing.T, testCase resource.TestCase) {
 	testCase.ExternalProviders = td.externalProviders()
 	// If any test steps require their own external providers, then we need to clear the global list
 	providersInTestStep := false
