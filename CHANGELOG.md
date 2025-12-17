@@ -18,6 +18,7 @@ BUG FIXES:
 - Fixed an issue where `msgraph_resource` failed to update resources when external changes are detected, specifically when clearing array fields ([#58](https://github.com/microsoft/terraform-provider-msgraph/issues/58))
 - Fixed an issue where `msgraph_resource` failed to track state for `$ref` resources (relationships), causing drift detection failures ([#68](https://github.com/microsoft/terraform-provider-msgraph/issues/68))
 - Fixed an issue where `@odata.type` property was missing in PATCH requests for resources that require it (e.g. Named Locations) ([#59](https://github.com/microsoft/terraform-provider-msgraph/issues/59))
+- Fixed an issue where `msgraph_resource` failed to handle 404 Not Found errors during deletion, causing `terraform destroy` to fail if the resource was already deleted.
 
 ## 0.2.0
 

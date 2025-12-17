@@ -539,8 +539,10 @@ func (r *MSGraphResource) Delete(ctx context.Context, req resource.DeleteRequest
 	}
 	err := r.client.Delete(ctx, itemUrl, model.ApiVersion.ValueString(), options)
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to delete resource", err.Error())
-		return
+		if !utils.ResponseErrorWasNotFound(err) {
+			resp.Diagnostics.AddError("Failed to delete resource", err.Error())
+			return
+		}
 	}
 
 	// Wait for deletion to complete
